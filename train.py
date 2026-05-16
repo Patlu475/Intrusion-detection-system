@@ -43,7 +43,27 @@ def compute_class_weights(original_counts):
     return weights.astype(np.float32)
 
 
+def is_model_complete(output_dir, model_name):
+    """Check if a model has already been fully trained and saved."""
+    files = {
+        'rf': ['rf_model.joblib', 'rf_metrics.json'],
+        'cnn': ['cnn_model.pt', 'cnn_metrics.json', 'cnn_history.json'],
+        'lstm': ['lstm_model.pt', 'lstm_metrics.json', 'lstm_history.json'],
+    }
+    return all(
+        os.path.exists(os.path.join(output_dir, f))
+        for f in files[model_name]
+    )
+
+
 def do_train_rf(data, output_dir, quick=False):
+    if is_model_complete(output_dir, 'rf'):
+        print("\n" + "="*60)
+        print("Random Forest already trained, skipping.")
+        print("="*60)
+        metrics = json.load(open(os.path.join(output_dir, 'rf_metrics.json')))
+        return metrics
+
     print("\n" + "="*60)
     print("Training Random Forest")
     print("="*60)
@@ -72,6 +92,13 @@ def do_train_rf(data, output_dir, quick=False):
 
 
 def do_train_cnn(data, output_dir, device, epochs=50, batch_size=256, lr=0.001):
+    if is_model_complete(output_dir, 'cnn'):
+        print("\n" + "="*60)
+        print("1D CNN already trained, skipping.")
+        print("="*60)
+        metrics = json.load(open(os.path.join(output_dir, 'cnn_metrics.json')))
+        return metrics
+
     print("\n" + "="*60)
     print("Training 1D CNN")
     print("="*60)
@@ -86,10 +113,12 @@ def do_train_cnn(data, output_dir, device, epochs=50, batch_size=256, lr=0.001):
     class_weights = compute_class_weights(data['original_class_counts'])
     print(f"Class weights: {class_weights}")
 
+    checkpoint_path = os.path.join(output_dir, 'cnn_checkpoint.pt')
     history = train_cnn_model(
         model, train_loader, val_loader,
         num_epochs=epochs, lr=lr, device=str(device),
         patience=10, class_weights=class_weights,
+        checkpoint_path=checkpoint_path,
     )
 
     y_pred = cnn_predict(model, data['X_test'], device=str(device))
@@ -105,10 +134,20 @@ def do_train_cnn(data, output_dir, device, epochs=50, batch_size=256, lr=0.001):
         json.dump(history, f, indent=2)
     np.save(os.path.join(output_dir, 'cnn_proba.npy'), y_proba)
 
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
+
     return metrics
 
 
 def do_train_lstm(data, output_dir, device, epochs=50, batch_size=256, lr=0.001):
+    if is_model_complete(output_dir, 'lstm'):
+        print("\n" + "="*60)
+        print("BiLSTM-Attention already trained, skipping.")
+        print("="*60)
+        metrics = json.load(open(os.path.join(output_dir, 'lstm_metrics.json')))
+        return metrics
+
     print("\n" + "="*60)
     print("Training BiLSTM with Attention")
     print("="*60)
@@ -122,10 +161,12 @@ def do_train_lstm(data, output_dir, device, epochs=50, batch_size=256, lr=0.001)
     model = build_lstm(data['num_features'], data['num_classes'])
     class_weights = compute_class_weights(data['original_class_counts'])
 
+    checkpoint_path = os.path.join(output_dir, 'lstm_checkpoint.pt')
     history = train_lstm_model(
         model, train_loader, val_loader,
         num_epochs=epochs, lr=lr, device=str(device),
         patience=10, class_weights=class_weights,
+        checkpoint_path=checkpoint_path,
     )
 
     y_pred = lstm_predict(model, data['X_test'], device=str(device))
@@ -140,6 +181,9 @@ def do_train_lstm(data, output_dir, device, epochs=50, batch_size=256, lr=0.001)
     with open(os.path.join(output_dir, 'lstm_history.json'), 'w') as f:
         json.dump(history, f, indent=2)
     np.save(os.path.join(output_dir, 'lstm_proba.npy'), y_proba)
+
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
 
     return metrics
 

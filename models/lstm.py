@@ -1,5 +1,7 @@
 """Bidirectional LSTM with attention for intrusion detection."""
 
+import os
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -104,7 +106,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
 
 def train_model(model, train_loader, val_loader, num_epochs=50, lr=0.001,
-                device='cpu', patience=10, class_weights=None):
+                device='cpu', patience=10, class_weights=None, checkpoint_path=None):
     model = model.to(device)
 
     if class_weights is not None:
@@ -116,7 +118,7 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=0.001,
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, patience=5, factor=0.5, verbose=True,
+        optimizer, patience=5, factor=0.5,
     )
 
     history = {
@@ -126,8 +128,21 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=0.001,
     best_val_f1 = 0
     best_state = None
     no_improve = 0
+    start_epoch = 0
 
-    for epoch in range(num_epochs):
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt['model_state'])
+        optimizer.load_state_dict(ckpt['optimizer_state'])
+        scheduler.load_state_dict(ckpt['scheduler_state'])
+        history = ckpt['history']
+        best_val_f1 = ckpt['best_val_f1']
+        best_state = ckpt['best_state']
+        no_improve = ckpt['no_improve']
+        start_epoch = ckpt['epoch'] + 1
+        print(f"Resuming from epoch {start_epoch} (best val F1: {best_val_f1:.4f})")
+
+    for epoch in range(start_epoch, num_epochs):
         train_loss, train_f1 = train_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_preds, val_labels = evaluate_epoch(
             model, val_loader, criterion, device,
@@ -152,11 +167,24 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=0.001,
         else:
             no_improve += 1
 
+        if checkpoint_path:
+            torch.save({
+                'epoch': epoch,
+                'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'scheduler_state': scheduler.state_dict(),
+                'history': history,
+                'best_val_f1': best_val_f1,
+                'best_state': best_state,
+                'no_improve': no_improve,
+            }, checkpoint_path)
+
         if no_improve >= patience:
             print(f"Early stopping at epoch {epoch+1}")
             break
 
-    model.load_state_dict(best_state)
+    if best_state is not None:
+        model.load_state_dict(best_state)
     history['best_epoch'] = len(history['val_f1']) - no_improve
     return history
 
