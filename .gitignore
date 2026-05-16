@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Data files (downloaded at runtime)
+data/*.txt
+data/*.csv
+
+# Model outputs
+output/
+figures/
+
+# Colab checkpoints
+.ipynb_checkpoints/
+
+# Environment
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
